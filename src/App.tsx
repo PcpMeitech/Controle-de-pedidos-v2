@@ -1,4 +1,7 @@
-import { useState, useEffect } from "react";
+console.log("App renderizou");
+import { useState, useEffect, useRef } from "react";
+import { db } from "./firebase";
+import { ref, set, onValue } from "firebase/database";
 
 var SK="meitech-v19b",PB="http://pdf.meitech.com.br:9000/file/";
 var AR=["","COMPRAS","SOLDA","LASER","TORNO CNC","FRESA CNC","FRESA CONVENCIONAL","CORTE SERRA","FURADEIRA","RETÍFICA","MONTAGEM","ALMOXARIFADO","ALMOXARIFADO SEPARAR P/ MONTAR","EXPEDIÇÃO","PINTURA","TRATAMENTO TÉRMICO"];
@@ -31,10 +34,63 @@ var _asb=useState({}),aSB=_asb[0],sASB=_asb[1];
 
 var _em=useState(null),emD=_em[0],sEmD=_em[1];
 
-function msg(m,e){sT({m:m,e:e});setTimeout(function(){sT(null)},2500)}
-function sv(p,c,o){try{localStorage.setItem(SK,JSON.stringify({p:p,c:c||cl,o:o||ops}))}catch(e){}}
-function upd(np,nc,no){sPd(np);sv(np,nc,no)}
-useEffect(function(){try{var r=localStorage.getItem(SK);if(r){var d=JSON.parse(r);var loaded=d.p||[];loaded.forEach(function(p){if(!p.tp)p.tp="N";if(!p.ft)p.ft=false;if(!p.dF)p.dF="";p.it.forEach(function(i){if(typeof i.ti==="undefined")i.ti=false;if(typeof i.tc==="undefined")i.tc="";if(typeof i.rel==="undefined")i.rel="unica";if(typeof i.pR==="undefined")i.pR=""})});sPd(loaded);if(d.c&&d.c.length)sCl(d.c);if(d.o&&d.o.length)sOps(d.o)}}catch(e){}},[]);
+// Refs para sempre ter os valores mais recentes sem stale closure
+var clRef=useRef(cl);var opsRef=useRef(ops);
+useEffect(function(){clRef.current=cl},[cl]);
+useEffect(function(){opsRef.current=ops},[ops]);
+
+function msg(m, e) { 
+  sT({ m: m, e: e }); 
+  setTimeout(function() { sT(null) }, 2500); 
+}
+
+// FUNÇÃO ÚNICA DE ATUALIZAÇÃO (FIREBASE) — corrigida para evitar stale closure
+function upd(np, nc, no) {
+  sPd(np);
+  var dadosParaSalvar = {
+    p: np,
+    c: nc !== undefined ? nc : clRef.current,
+    o: no !== undefined ? no : opsRef.current
+  };
+  set(ref(db, 'meitech/dados'), dadosParaSalvar)
+  .then(function(){ console.log("✅ SINCRONIZADO NO FIREBASE"); })
+  .catch(function(err){
+    console.error("❌ ERRO FIREBASE:", err);
+    msg("Erro ao salvar online", 1);
+  });
+}
+
+// PONTE PARA O RESTO DO CÓDIGO
+function sv(p, c, o) {
+  upd(p, c, o);
+}
+
+// LISTENER ÚNICO — ouve mudanças em tempo real do Firebase
+useEffect(function() {
+  console.log("Iniciando conexão com o banco...");
+
+  var unsubscribe = onValue(ref(db, 'meitech/dados'), function(snapshot) {
+    var data = snapshot.val();
+
+    if (data) {
+      console.log("Dados recebidos:", data);
+
+      var loaded = data.p || [];
+      loaded.forEach(function(p) {
+        if (!p.it) p.it = [];
+        if (typeof p.ft === "undefined") p.ft = false;
+      });
+
+      sPd(loaded);
+      if (data.c) sCl(data.c);
+      if (data.o) sOps(data.o);
+    } else {
+      console.log("Banco vazio ou sem permissão.");
+    }
+  });
+
+  return function() { unsubscribe(); };
+}, []);
 
 function oFm(p){if(p){sFm({n:p.n,pv:p.pv,cl:p.cl,ob:p.ob,po:p.po||"",tp:p.tp||"N",it:p.it.map(function(i){return Object.assign({},i)})});sEI(p.id)}else{sFm({n:"",pv:"",cl:"",ob:"",po:"",tp:"N",it:[nI()]});sEI(null)}sVw("frm")}
 function aI(){sFm(function(f){return Object.assign({},f,{it:f.it.concat([nI()])})})}
